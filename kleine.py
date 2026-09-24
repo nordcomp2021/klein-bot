@@ -87,7 +87,21 @@ if __name__ == "__main__":
 
         # Glavna petlja
         while True:
+            time.sleep(CHECK_INTERVAL)def run_bot():
+    try:
+        print("Pokrećem Selenium driver...")
+        driver = setup_driver()
+        print("Bot je pokrenut u pozadini...")
+        check_kleinanzeigen(driver, is_first_run=True)
+        print(f"Učitano {len(seen_ads)} postojećih oglasa.")
+
+        while True:
             time.sleep(CHECK_INTERVAL)
+            check_kleinanzeigen(driver, is_first_run=False)
+    except Exception as e:
+        import traceback
+        print(f"KRITIČNA GREŠKA u run_bot: {e}")
+        traceback.print_exc()
             check_kleinanzeigen(driver, is_first_run=False)
 
     except KeyboardInterrupt:

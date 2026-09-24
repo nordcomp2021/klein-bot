@@ -12,8 +12,8 @@ def home():
     return "Bot je aktivan i prati oglase!"
 
 SEARCH_URL = "https://www.kleinanzeigen.de/s-fahrraeder/herren/93326/preis:200:650/fully/k0c217l6231r100+fahrraeder.art_s:herren"
-TELEGRAM_BOT_TOKEN = "8688931289:AAEY4gIT7rO-CY85WLM_t8EQPnI5KZ7gK2U"
-TELEGRAM_CHAT_ID = "8846679847"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 CHECK_INTERVAL = 600
 seen_ads = set()

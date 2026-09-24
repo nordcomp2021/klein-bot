@@ -5,7 +5,7 @@ import requests
 from flask import Flask
 from bs4 import BeautifulSoup
 
-# Inicijalizacija Flask aplikacije za hosting
+# Inicijalizacija Flask aplikacije za hosting na Renderu
 app = Flask(__name__)
 
 # Preuzimanje poverljivih podataka iz Environment varijabli
@@ -13,7 +13,7 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 SEARCH_URL = "https://www.kleinanzeigen.de/s-fahrraeder/herren/93326/preis:200:650/fully/k0c217l6231r100+fahrraeder.art_s:herren"
-CHECK_INTERVAL = 600  # 10 minuta
+CHECK_INTERVAL = 600  # Provera na svakih 10 minuta (600 sekundi)
 seen_ads = set()
 
 HEADERS = {
@@ -27,9 +27,9 @@ def home():
     return "Bot je aktivan i prati oglase na Kleinanzeigen-u!"
 
 def send_telegram_notification(title, price, link, img_url):
-    """Slanje obaveštenja na Telegram sa slikom ili kao tekst."""
+    """Slanje obavestenja na Telegram sa slikom ili kao tekst."""
     if not BOT_TOKEN or not CHAT_ID:
-        print("Greška: TELEGRAM_BOT_TOKEN ili TELEGRAM_CHAT_ID nisu postavljeni u okruženju!")
+        print("Greska: TELEGRAM_BOT_TOKEN ili TELEGRAM_CHAT_ID nisu postavljeni u okruzenju!")
         return
 
     caption = (
@@ -50,7 +50,7 @@ def send_telegram_notification(title, price, link, img_url):
         response = requests.post(url, json=payload, timeout=10)
         response.raise_for_status()
     except Exception as e:
-        print(f"Greška pri slanju na Telegram: {e}")
+        print(f"Greska pri slanju na Telegram: {e}")
 
 def check_kleinanzeigen(is_first_run=False):
     print("Proveravam nove oglase na Kleinanzeigen...")
@@ -58,14 +58,14 @@ def check_kleinanzeigen(is_first_run=False):
         response = requests.get(SEARCH_URL, headers=HEADERS, timeout=15)
         
         if response.status_code != 200:
-            print(f"Greška pri pristupu sajtu. Status kod: {response.status_code}")
+            print(f"Greska pri pristupu sajtu. Status kod: {response.status_code}")
             return
 
         soup = BeautifulSoup(response.text, "html.parser")
         articles = soup.find_all("article", attrs={"data-adid": True})
 
         if len(articles) == 0:
-            print("UPOZORENJE: 0 oglasa pronađeno.")
+            print("UPOZORENJE: 0 oglasa pronadjeno. Sadrzaj je mozda blokiran.")
             return
 
         for article in articles:
@@ -74,8 +74,7 @@ def check_kleinanzeigen(is_first_run=False):
                 if not ad_id or ad_id in seen_ads:
                     continue
 
-                # 1. PRONALAŽENJE LINKA I NASLOVA
-                # Kleinanzeigen uglavnom drži naslov unutar h2 -> a ili klase .ellipsis / .text-module-title
+                # 1. PRONALAZENJE LINKA I NASLOVA
                 link_element = (
                     article.find("a", class_="ellipsis") or 
                     article.find("h2") or 
@@ -83,9 +82,9 @@ def check_kleinanzeigen(is_first_run=False):
                 )
 
                 if not link_element:
-                    continue  # Preskoči ako nije pravi oglas (reklama/baner)
+                    continue  # Preskoci ako nije pravi oglas (reklama/baner)
 
-                # Ako je unutar h2 našao <h2><a>Naslov</a></h2>
+                # Ako je element <h2><a>Naslov</a></h2>
                 if link_element.name == "h2" and link_element.find("a"):
                     link_element = link_element.find("a")
 
@@ -93,11 +92,11 @@ def check_kleinanzeigen(is_first_run=False):
                 href = link_element.get("href") or article.get("data-href")
 
                 if not href or not title:
-                    continue  # Preskačemo prazne oglase / reklame
+                    continue  # Preskacemo prazne oglase i reklame
 
                 link = "https://www.kleinanzeigen.de" + href if href.startswith("/") else href
 
-                # 2. PRONALAŽENJE CENE
+                # 2. PRONALAZENJE CENE
                 price_element = (
                     article.find("p", class_="aditem-main--middle--price-shipping--price") or 
                     article.find("p", class_="text-title3") or
@@ -105,18 +104,17 @@ def check_kleinanzeigen(is_first_run=False):
                 )
                 
                 price = price_element.text.strip() if price_element else "Nije navedeno"
-                # Čišćenje duplih razmaka u ceni ako ih ima
-                price = " ".join(price.split())
+                price = " ".join(price.split())  # Uklanjanje visestrukih razmaka
 
-                # 3. PRONALAŽENJE SLIKE
+                # 3. PRONALAZENJE SLIKE
                 img_element = article.find("img")
                 img_url = None
                 if img_element:
-                    # Nekada je slika u src, a nekada u data-src (lazy-loading)
                     img_url = img_element.get("src") or img_element.get("data-src")
 
                 seen_ads.add(ad_id)
 
+                # Ako je prvo pokretanje, samo sacuvaj ID-jeve i nemoj slati spamu na Telegram
                 if is_first_run:
                     continue
 
@@ -124,22 +122,22 @@ def check_kleinanzeigen(is_first_run=False):
                 print(f"Poslat nov oglas: {title} ({price})")
 
             except Exception as e:
-                print(f"Greška pri obradi pojedinačnog oglasa: {e}")
+                print(f"Greska pri obradi pojedinacnog oglasa: {e}")
                 continue
 
     except Exception as e:
-        print(f"Greška pri mrežnom zahtevu: {e}")
+        print(f"Greska pri mreznom zahtevu: {e}")
 
 def run_bot():
-    print("Pokrećem prvu proveru...")
+    print("Pokrecem prvu proveru...")
     check_kleinanzeigen(is_first_run=True)
-    print(f"Učitano {len(seen_ads)} postojećih oglasa.")
+    print(f"Ucitano {len(seen_ads)} postojectih oglasa.")
 
     while True:
         time.sleep(CHECK_INTERVAL)
         check_kleinanzeigen(is_first_run=False)
 
-# Pokretanje bota u pozadinskom nitu (background thread)
+# Pokretanje bota u pozadinskom nitu
 threading.Thread(target=run_bot, daemon=True).start()
 
 if __name__ == "__main__":

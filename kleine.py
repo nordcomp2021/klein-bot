@@ -2,18 +2,25 @@ import os
 import time
 import threading
 import requests
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from flask import Flask
 from bs4 import BeautifulSoup
 
-# Inicijalizacija Flask aplikacije za hosting na Renderu
 app = Flask(__name__)
 
-# Preuzimanje poverljivih podataka iz Environment varijabli
+# TELEGRAM PODEŠAVANJA
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
+# EMAIL PODEŠAVANJA
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
+SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
+RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
+
 SEARCH_URL = "https://www.kleinanzeigen.de/s-fahrraeder/herren/93326/preis:200:650/fully/k0c217l6231r100+fahrraeder.art_s:herren"
-CHECK_INTERVAL = 600  # Provera na svakih 10 minuta (600 sekundi)
+CHECK_INTERVAL = 600  # Provera na svakih 10 minuta
 seen_ads = set()
 
 HEADERS = {
@@ -24,12 +31,12 @@ HEADERS = {
 
 @app.route('/')
 def home():
-    return "Bot je aktivan i prati oglase na Kleinanzeigen-u!"
+    return "Bot je aktivan i salje obavestenja na Telegram i Email!"
 
 def send_telegram_notification(title, price, link, img_url):
-    """Slanje obavestenja na Telegram sa slikom ili kao tekst."""
+    """Slanje obaveštenja na Telegram."""
     if not BOT_TOKEN or not CHAT_ID:
-        print("Greska: TELEGRAM_BOT_TOKEN ili TELEGRAM_CHAT_ID nisu postavljeni u okruzenju!")
+        print("Telegram podaci nisu podeseni, preskacem Telegram.")
         return
 
     caption = (
@@ -49,23 +56,55 @@ def send_telegram_notification(title, price, link, img_url):
     try:
         response = requests.post(url, json=payload, timeout=10)
         response.raise_for_status()
+        print(f"Telegram poruka poslata za: {title}")
     except Exception as e:
         print(f"Greska pri slanju na Telegram: {e}")
+
+def send_email_notification(title, price, link):
+    """Slanje obaveštenja na Email."""
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        print("Email podaci nisu podeseni, preskacem Email.")
+        return
+
+    to_email = RECEIVER_EMAIL if RECEIVER_EMAIL else SENDER_EMAIL
+
+    subject = f"🔔 Novi oglas: {title}"
+    body = f"""
+    <h2>Novi oglas na Kleinanzeigen!</h2>
+    <p><b>Naslov:</b> {title}</p>
+    <p><b>Cena:</b> {price}</p>
+    <p><b>Link:</b> <a href="{link}">Otvori oglas na sajtu</a></p>
+    """
+
+    msg = MIMEMultipart()
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'html'))
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.sendmail(SENDER_EMAIL, to_email, msg.as_string())
+        server.quit()
+        print(f"Email uspesno poslat za: {title}")
+    except Exception as e:
+        print(f"Greska pri slanju email-a: {e}")
 
 def check_kleinanzeigen(is_first_run=False):
     print("Proveravam nove oglase na Kleinanzeigen...")
     try:
         response = requests.get(SEARCH_URL, headers=HEADERS, timeout=15)
-        
         if response.status_code != 200:
-            print(f"Greska pri pristupu sajtu. Status kod: {response.status_code}")
+            print(f"Greska status kod: {response.status_code}")
             return
 
         soup = BeautifulSoup(response.text, "html.parser")
         articles = soup.find_all("article", attrs={"data-adid": True})
 
         if len(articles) == 0:
-            print("UPOZORENJE: 0 oglasa pronadjeno. Sadrzaj je mozda blokiran.")
+            print("UPOZORENJE: 0 oglasa pronadjeno.")
             return
 
         for article in articles:
@@ -74,7 +113,6 @@ def check_kleinanzeigen(is_first_run=False):
                 if not ad_id or ad_id in seen_ads:
                     continue
 
-                # 1. PRONALAZENJE LINKA I NASLOVA
                 link_element = (
                     article.find("a", class_="ellipsis") or 
                     article.find("h2") or 
@@ -82,9 +120,8 @@ def check_kleinanzeigen(is_first_run=False):
                 )
 
                 if not link_element:
-                    continue  # Preskoci ako nije pravi oglas (reklama/baner)
+                    continue
 
-                # Ako je element <h2><a>Naslov</a></h2>
                 if link_element.name == "h2" and link_element.find("a"):
                     link_element = link_element.find("a")
 
@@ -92,11 +129,10 @@ def check_kleinanzeigen(is_first_run=False):
                 href = link_element.get("href") or article.get("data-href")
 
                 if not href or not title:
-                    continue  # Preskacemo prazne oglase i reklame
+                    continue
 
                 link = "https://www.kleinanzeigen.de" + href if href.startswith("/") else href
 
-                # 2. PRONALAZENJE CENE
                 price_element = (
                     article.find("p", class_="aditem-main--middle--price-shipping--price") or 
                     article.find("p", class_="text-title3") or
@@ -104,9 +140,8 @@ def check_kleinanzeigen(is_first_run=False):
                 )
                 
                 price = price_element.text.strip() if price_element else "Nije navedeno"
-                price = " ".join(price.split())  # Uklanjanje visestrukih razmaka
+                price = " ".join(price.split())
 
-                # 3. PRONALAZENJE SLIKE
                 img_element = article.find("img")
                 img_url = None
                 if img_element:
@@ -114,15 +149,15 @@ def check_kleinanzeigen(is_first_run=False):
 
                 seen_ads.add(ad_id)
 
-                # Ako je prvo pokretanje, samo sacuvaj ID-jeve i nemoj slati spamu na Telegram
                 if is_first_run:
                     continue
 
+                # Slanje obaveštenja na oba kanala
                 send_telegram_notification(title, price, link, img_url)
-                print(f"Poslat nov oglas: {title} ({price})")
+                send_email_notification(title, price, link)
 
             except Exception as e:
-                print(f"Greska pri obradi pojedinacnog oglasa: {e}")
+                print(f"Greska pri obradi oglasa: {e}")
                 continue
 
     except Exception as e:
@@ -137,7 +172,6 @@ def run_bot():
         time.sleep(CHECK_INTERVAL)
         check_kleinanzeigen(is_first_run=False)
 
-# Pokretanje bota u pozadinskom nitu
 threading.Thread(target=run_bot, daemon=True).start()
 
 if __name__ == "__main__":

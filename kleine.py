@@ -1,3 +1,4 @@
+import re
 import time
 import os
 import threading
@@ -54,37 +55,75 @@ def check_kleinanzeigen(driver, is_first_run=False):
     try:
         driver.get(SEARCH_URL)
         time.sleep(4)
-        articles = driver.find_elements(By.CSS_SELECTOR, "article.aditem")
 
-        for article in articles:
+        try:
+            accept_button = driver.find_element(By.ID, "gdpr-banner-accept")
+            accept_button.click()
+            print("Cookie banner prihvaćen.")
+            time.sleep(2)
+        except Exception:
+            print("Cookie banner nije pronađen (možda već prihvaćen).")
+
+        ad_links = driver.find_elements(By.CSS_SELECTOR, "a[href*='/s-anzeige/']")
+
+        if len(ad_links) == 0:
+            print("UPOZORENJE: 0 oglasa pronađeno, čuvam screenshot i HTML za debug...")
+            driver.save_screenshot("debug_screenshot.png")
+            with open("debug_page.html", "w", encoding="utf-8") as f:
+                f.write(driver.page_source)
+
+        seen_ids_this_run = set()
+
+        for link in ad_links:
             try:
-                ad_id = article.get_attribute("data-adid")
-                if not ad_id:
+                href = link.get_attribute("href")
+                if not href or "/s-anzeige/" not in href:
                     continue
 
-                if ad_id not in seen_ads:
-                    title_element = article.find_element(By.CSS_SELECTOR, "h2.text-module-header a")
-                    title = title_element.text
-                    link = title_element.get_attribute("href")
+                # Izvuci jedinstveni ID oglasa iz linka
+                match = re.search(r"/s-anzeige/[^/]+/(\d+)-", href)
+                if not match:
+                    continue
+                ad_id = match.group(1)
 
-                    try:
-                        price = article.find_element(By.CSS_SELECTOR, "p.aditem-main--middle--price-shipping--price").text
-                    except:
-                        price = "Nije navedeno"
+                # Preskoči duplikate u istom krugu (isti oglas se ponekad linkuje 2x - slika i naslov)
+                if ad_id in seen_ids_this_run:
+                    continue
+                seen_ids_this_run.add(ad_id)
 
-                    try:
-                        img_element = article.find_element(By.CSS_SELECTOR, ".imagebox img")
-                        img_url = img_element.get_attribute("src")
-                    except:
-                        img_url = None
+                if ad_id in seen_ads:
+                    continue
 
-                    seen_ads.add(ad_id)
+                title = link.text.strip()
+                if not title:
+                    continue
 
-                    if is_first_run:
-                        continue
+                # Pokušaj da nađeš cenu u blizini linka
+                price = "Nije navedeno"
+                try:
+                    price_element = link.find_element(
+                        By.XPATH,
+                        "ancestor::*[.//p[contains(@class,'text-title3')]][1]//p[contains(@class,'text-title3')]"
+                    )
+                    price = price_element.text.strip()
+                except Exception:
+                    pass
 
-                    send_telegram_notification(title, price, link, img_url)
-                    print(f"Poslat nov oglas: {title}")
+                # Pokušaj da nađeš sliku u blizini linka
+                img_url = None
+                try:
+                    img_element = link.find_element(By.XPATH, "ancestor::article[1]//img")
+                    img_url = img_element.get_attribute("src")
+                except Exception:
+                    pass
+
+                seen_ads.add(ad_id)
+
+                if is_first_run:
+                    continue
+
+                send_telegram_notification(title, price, href, img_url)
+                print(f"Poslat nov oglas: {title}")
 
             except Exception as e:
                 continue

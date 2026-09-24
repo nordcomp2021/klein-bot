@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
-# Instaliramo Chrome i potrebne zavisnosti
+ENV PYTHONUNBUFFERED=1
+
 RUN apt-get update && apt-get install -y \
     wget gnupg unzip curl \
     && mkdir -p /etc/apt/keyrings \
@@ -16,4 +17,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "kleine.py"]
+CMD ["python", "-u", "kleine.py"]

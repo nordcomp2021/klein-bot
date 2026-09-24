@@ -1,7 +1,7 @@
 import requests
 
 # Podaci za slanje
-BOT_TOKEN = "8688931289:AAFE9x7CBDXulokVcCLU2DJWnJi7rT0-HlY"
+BOT_TOKEN = "8688931289:AAEYAdmtq-AK7DkJJ2CKLc-mcOm2l-2ukMY"
 CHAT_ID = "8846679847"
 
 def test_poruka():
